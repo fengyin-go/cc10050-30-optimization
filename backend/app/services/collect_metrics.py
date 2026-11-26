@@ -17,6 +17,8 @@ class CollectMetricsService(BaseModuleService):
     ENTITY = "指标记录"
     OPERATION_TERM = "采集"
     LIST_FIELDS = ["统计时间", "站点名称", "抓取量", "解析量", "产出量"]
+    # 指标页需要按解析窗口筛选，表格列保持原五列。
+    FILTER_FIELDS = [*LIST_FIELDS, "解析模板", "样本窗口"]
     REQUIRED_FIELDS = ["统计时间", "站点名称", "抓取量"]
     STATUS_ORDER = ["正常", "量级波动", "断采"]
     ACTION_RULES = {"查看趋势": "量级波动", "忽略波动": "断采"}
@@ -25,11 +27,14 @@ class CollectMetricsService(BaseModuleService):
     # ---- 业务扩展：量级统计与健康度判定 ----
 
     def record_stats(self, site: str, crawled: int, parsed: int, output: int) -> dict[str, Any]:
-        """记录一次站点量级统计。"""
+        """记录一次站点量级统计；窗口指标行由审计发布独占，这里只写站点汇总行。"""
         if crawled < 0 or parsed < 0 or output < 0:
             return {"ok": False, "message": "量级不能为负数"}
         rows = store.rows(self.MODULE)
-        row = next((r for r in rows if r.get("站点名称") == site), None)
+        row = next(
+            (r for r in rows if r.get("站点名称") == site and not self._window_of(r)),
+            None,
+        )
         now = datetime.now(timezone.utc).isoformat()
         if row is None:
             mid = max((int(r.get("id", 0)) for r in rows), default=0) + 1
@@ -130,7 +135,11 @@ class CollectMetricsService(BaseModuleService):
 
     def trend_report(self, site: str) -> dict[str, Any]:
         """输出站点量级趋势报告供告警规则参考。"""
-        rows = [r for r in store.rows(self.MODULE) if r.get("站点名称") == site]
+        rows = [
+            r for r in store.rows(self.MODULE)
+            if r.get("站点名称") == site
+            and self._window_of(r) == ""
+        ]
         if not rows:
             return {"ok": False, "message": f"站点 {site} 没有指标记录"}
         latest = rows[-1]
@@ -143,3 +152,169 @@ class CollectMetricsService(BaseModuleService):
             "output": latest.get("产出量", ""),
             "status": latest.get("status", ""),
         }
+
+    # ---- 业务扩展：消费解析质量审计的窗口报告 ----
+
+    @staticmethod
+    def _window_of(row: dict[str, Any]) -> str:
+        return str(row.get("样本窗口") or "").strip()
+
+    def _window_row(
+        self, site: str, template: str, window: str
+    ) -> dict[str, Any] | None:
+        for row in store.rows(self.MODULE):
+            if (
+                str(row.get("站点名称", "")).strip() == site
+                and str(row.get("样本窗口", "")).strip() == window
+                and str(row.get("解析模板", "")).strip() == template
+            ):
+                return row
+        return None
+
+    def consume_audit_report(
+        self,
+        *,
+        site: str,
+        template: str,
+        window: str,
+        report_id: int,
+        numerator: int,
+        denominator: int,
+        rate_text: str,
+        failure_category: str,
+        receipt_id: str = "",
+    ) -> dict[str, Any]:
+        """消费解析质量报告：把分子分母与失败类别落到该站点模板窗口的指标状态。
+
+        - 只按「站点 + 模板 + 样本窗口」精确匹配，旁边窗口的指标不被改写。
+        - 重复提交同一份报告只覆盖同一行，不会累加分母。
+        - 分母为 0 时不写 0% 命中率，指标标记「暂无样本」。
+        """
+        site = str(site or "").strip()
+        template = str(template or "").strip()
+        window = str(window or "").strip()
+        now = datetime.now(timezone.utc).isoformat()
+
+        row = self._window_row(site, template, window)
+        if row is None:
+            rows = store.rows(self.MODULE)
+            mid = max((int(r.get("id", 0)) for r in rows), default=0) + 1
+            row = {
+                "id": mid,
+                "统计时间": now,
+                "站点名称": site,
+                "解析模板": template,
+                "样本窗口": window,
+                "抓取量": "0",
+                "解析量": "0",
+                "产出量": "0",
+                "status": "正常",
+                "pending": True,
+                "abnormal": False,
+                "分母": "0",
+                "分子": "0",
+                "命中率": "暂无样本",
+                "失败类别": "暂无样本",
+                "审计回执号": "",
+                "审计明细id": report_id,
+            }
+            rows.append(row)
+
+        if denominator <= 0:
+            row["抓取量"] = "0"
+            row["解析量"] = "0"
+            row["分母"] = "0"
+            row["分子"] = "0"
+            row["命中率"] = "暂无样本"
+            row["失败类别"] = failure_category or "暂无样本"
+            row["status"] = "正常"
+            row["pending"] = True
+            row["abnormal"] = False
+            row["统计时间"] = now
+            row["审计回执号"] = receipt_id
+            row["审计明细id"] = report_id
+            return {
+                "ok": True,
+                "message": "暂无样本，指标不计算命中率",
+                "metrics_id": row.get("id"),
+                "status": row["status"],
+                "denominator": 0,
+                "numerator": 0,
+                "rate": "暂无样本",
+            }
+
+        ratio = numerator / denominator
+        row["抓取量"] = str(denominator)
+        row["解析量"] = str(numerator)
+        row["产出量"] = str(numerator)
+        row["分母"] = str(denominator)
+        row["分子"] = str(numerator)
+        row["命中率"] = rate_text or "暂无样本"
+        row["失败类别"] = failure_category or ("无失败" if numerator == denominator else "部分未命中")
+        row["统计时间"] = now
+        row["审计回执号"] = receipt_id
+        row["审计明细id"] = report_id
+        if ratio >= 0.9:
+            row["status"] = "正常"
+            row["pending"] = False
+            row["abnormal"] = False
+        else:
+            # 有抓取但解析产出不足，按量级波动处理；全未命中时失败类别单独留痕。
+            row["status"] = "量级波动"
+            row["pending"] = True
+            row["abnormal"] = ratio < 0.6
+        return {
+            "ok": True,
+            "message": "解析质量口径已消费",
+            "metrics_id": row.get("id"),
+            "status": row["status"],
+            "denominator": denominator,
+            "numerator": numerator,
+            "rate": row["命中率"],
+            "failure_category": row["失败类别"],
+            "receipt_id": receipt_id,
+        }
+
+    def audit_report_view(self, site: str, template: str, window: str) -> dict[str, Any]:
+        """按原窗口读取指标页采用的解析质量口径，供审计核对。"""
+        site = str(site or "").strip()
+        template = str(template or "").strip()
+        window = str(window or "").strip()
+        row = self._window_row(site, template, window)
+        if row is None:
+            return {"ok": False, "message": f"窗口 {window} 尚无指标记录"}
+        return {
+            "ok": True,
+            "message": "指标口径已读取",
+            "site": site,
+            "template": template,
+            "window": window,
+            "metrics_id": row.get("id"),
+            "denominator": int(str(row.get("分母", "0") or 0)),
+            "numerator": int(str(row.get("分子", "0") or 0)),
+            "rate": row.get("命中率", "暂无样本"),
+            "failure_category": row.get("失败类别", ""),
+            "status": row.get("status", ""),
+            "receipt_id": row.get("审计回执号", ""),
+        }
+
+    def list_window_metrics(self) -> dict[str, Any]:
+        """列出带样本窗口的指标记录，旁边时段独立展示。"""
+        rows = [
+            {
+                "id": row.get("id"),
+                "站点名称": row.get("站点名称", ""),
+                "解析模板": row.get("解析模板", ""),
+                "样本窗口": row.get("样本窗口", ""),
+                "分母": int(str(row.get("分母", "0") or 0)),
+                "分子": int(str(row.get("分子", "0") or 0)),
+                "命中率": row.get("命中率", "暂无样本"),
+                "失败类别": row.get("失败类别", ""),
+                "status": row.get("status", ""),
+                "审计回执号": row.get("审计回执号", ""),
+                "统计时间": row.get("统计时间", ""),
+            }
+            for row in store.rows(self.MODULE)
+            if self._window_of(row)
+        ]
+        return {"ok": True, "message": "窗口指标已读取", "metrics": rows}

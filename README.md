@@ -81,3 +81,38 @@ npm run dev
 
 领域：数据工程
 子方向：数据采集、爬虫与RPA
+
+## 解析质量审计的样本窗口
+
+解析质量审计与采集量指标支持按「站点 + 模板 + 样本窗口」恢复与发布报告：
+
+- 空窗口不写 0% 命中率，字段命中率记为「暂无样本」，发布状态停在「确认中」；
+- 有样本但全未命中记真 `0.00%`，同时记录分母 `2` 与失败类别「解析全未命中」；
+- 补报只收所属站点/模板/窗口的样本，旁窗样本被拒收，重复指纹不重复计入分母；
+- 每次发布或重试发布都会追加回执，旧回执保留可查；重投不涨分母；
+- 采集量指标按窗口落分子分母与失败类别，审计可用回执核对指标口径。
+
+相关接口（前端解析质量审计页 / 采集量指标页已内置操作面板）：
+
+```text
+GET  /api/parse_audit/windows                    列出全部窗口报告
+GET  /api/parse_audit/windows/progress           只读恢复原窗口进度
+POST /api/parse_audit/windows/open               打开或恢复窗口
+POST /api/parse_audit/windows/backfill           补报迟到样本（幂等）
+POST /api/parse_audit/windows/publish            发布窗口报告
+POST /api/parse_audit/windows/retry-publish      重试原发布
+GET  /api/parse_audit/windows/receipt            按窗口/版本读取回执
+GET  /api/parse_audit/windows/verify             用回执核对指标口径
+GET  /api/collect_metrics/windows                窗口指标口径
+GET  /api/collect_metrics/windows/view           按原窗口读取指标口径
+```
+
+参数均可用 `site/template/window` 或中文 `站点名称/解析模板/样本窗口` 两种写法。
+示例数据预置了 站点E / E站价格页模板 / E17（旁窗，已发布）、E18（空报告确认中）、E19（未开窗）。
+
+回归脚本：
+
+```bash
+cd backend
+.venv/bin/python -I tests/window_flow_check.py --base http://127.0.0.1:8020
+```

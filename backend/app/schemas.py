@@ -29,3 +29,29 @@ class EntryPayload(BaseModel):
 class ActionPayload(BaseModel):
     action: str
     remark: str | None = None
+
+
+class WindowActionPayload(BaseModel):
+    """解析质量审计窗口动作：站点、模板、样本窗口与补报样本一起提交。
+
+    同时接受中文字段名，前端与脚本都按业务字段直接提交即可。
+    """
+
+    site: str = ""
+    template: str = ""
+    window: str = ""
+    samples: list[dict[str, Any]] = Field(default_factory=list)
+    version: int | None = None
+    note: str | None = None
+    站点名称: str = ""
+    解析模板: str = ""
+    样本窗口: str = ""
+
+    def resolved_site(self) -> str:
+        return (self.site or self.站点名称).strip()
+
+    def resolved_template(self) -> str:
+        return (self.template or self.解析模板).strip()
+
+    def resolved_window(self) -> str:
+        return (self.window or self.样本窗口).strip()

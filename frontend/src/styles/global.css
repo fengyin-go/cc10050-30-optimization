@@ -70,3 +70,25 @@ body { margin: 0; background: #f6f8fb; color: #1f2937; }
 .analysis-chart { display: flex; align-items: flex-end; gap: 8px; height: 160px; padding: 12px 0; }
 .analysis-bar { flex: 1; border-radius: 4px 4px 0 0; background: var(--brand); min-width: 24px; position: relative; transition: height 0.4s; }
 .analysis-bar span { position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); font-size: 10px; color: var(--muted); white-space: nowrap; }
+/* 解析质量审计窗口 */
+.window-panel { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
+.window-head h3 { margin: 0; font-size: 15px; }
+.window-desc { color: var(--muted); font-size: 12px; margin: 4px 0 10px; }
+.window-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 10px; }
+.window-form label, .window-line { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.window-form input, .window-form select, .window-line input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+.window-message { font-size: 12px; color: #1f6feb; margin: 6px 0; }
+.window-card { border-top: 1px solid var(--border); padding-top: 10px; }
+.window-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; margin-bottom: 8px; }
+.badge { border-radius: 10px; padding: 2px 8px; font-size: 12px; border: 1px solid var(--border); }
+.badge.tone-empty { background: #f1f5f9; color: #475569; }
+.badge.tone-miss { background: #fee4e2; color: #b42318; }
+.badge.tone-backfill { background: #fff4d6; color: #93370d; }
+.badge.tone-ok { background: #dcfae6; color: #067647; }
+.badge.tone-pending { background: #e0f2fe; color: #0b4a6f; }
+.window-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 14px; margin: 8px 0; }
+.window-stats dt { font-size: 12px; color: var(--muted); }
+.window-stats dd { font-size: 14px; margin: 0 0 4px; }
+.window-block { border: 1px dashed var(--border); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.window-block legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
+.window-diff { color: #b42318; font-size: 12px; margin: 8px 0 0; padding-left: 18px; }

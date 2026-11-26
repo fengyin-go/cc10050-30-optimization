@@ -28,6 +28,9 @@
       </span>
     </p>
 
+    <AuditWindowPanel v-if="meta.key === 'parse_audit'" />
+    <MetricsWindowPanel v-if="meta.key === 'collect_metrics'" />
+
     <form class="filter-bar" @submit.prevent="reload">
       <label v-for="field in filterFields" :key="field" class="filter-item">
         <span>{{ field }}</span>
@@ -103,6 +106,8 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/backend-service'
+import AuditWindowPanel from '@/components/AuditWindowPanel.vue'
+import MetricsWindowPanel from '@/components/MetricsWindowPanel.vue'
 import type { EntryRow } from '@/data/types'
 
 const props = defineProps<{ moduleKey: string }>()
